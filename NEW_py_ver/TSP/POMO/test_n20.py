@@ -2,7 +2,7 @@
 # Machine Environment Config
 
 DEBUG_MODE = False
-USE_CUDA = not DEBUG_MODE
+USE_CUDA = False
 CUDA_DEVICE_NUM = 0
 
 
@@ -104,3 +104,4 @@ def _print_config():
 
 if __name__ == "__main__":
     main()
+
