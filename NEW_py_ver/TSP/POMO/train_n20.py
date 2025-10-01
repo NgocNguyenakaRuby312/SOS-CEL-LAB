@@ -59,8 +59,8 @@ optimizer_params = {
 trainer_params = {
     'use_cuda': USE_CUDA,
     'cuda_device_num': CUDA_DEVICE_NUM,
-    'epochs': 510,
-    'train_episodes': 100 * 1000,
+    'epochs': 3, #init 510
+    'train_episodes': 1000, #initially 100 * 1000
     'train_batch_size': 64,
     'logging': {
         'model_save_interval': 10,
@@ -108,6 +108,10 @@ def main():
 
     trainer.run()
 
+    # Print a sample solution route after training
+    print("Sample solution route from trained model:")
+    trainer.get_solution(batch_size=1)
+
 
 def _set_debug_mode():
     global trainer_params
@@ -128,3 +132,4 @@ def _print_config():
 
 if __name__ == "__main__":
     main()
+

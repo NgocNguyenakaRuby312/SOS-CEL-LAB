@@ -1,6 +1,6 @@
-
 import torch
 from logging import getLogger
+import os
 
 from TSPEnv import TSPEnv as Env
 from TSPModel import TSPModel as Model
@@ -26,7 +26,7 @@ class TSPTrainer:
 
         # result folder, logger
         self.logger = getLogger(name='trainer')
-        self.result_folder = get_result_folder()
+        self.result_folder = './result/saved_tsp20_model'
         self.result_log = LogData()
 
         # cuda
@@ -65,57 +65,9 @@ class TSPTrainer:
     def run(self):
         self.time_estimator.reset(self.start_epoch)
         for epoch in range(self.start_epoch, self.trainer_params['epochs']+1):
-            self.logger.info('=================================================================')
-
-            # LR Decay
-            self.scheduler.step()
-
-            # Train
-            train_score, train_loss = self._train_one_epoch(epoch)
-            self.result_log.append('train_score', epoch, train_score)
-            self.result_log.append('train_loss', epoch, train_loss)
-
-            ############################
-            # Logs & Checkpoint
-            ############################
-            elapsed_time_str, remain_time_str = self.time_estimator.get_est_string(epoch, self.trainer_params['epochs'])
-            self.logger.info("Epoch {:3d}/{:3d}: Time Est.: Elapsed[{}], Remain[{}]".format(
-                epoch, self.trainer_params['epochs'], elapsed_time_str, remain_time_str))
-
-            all_done = (epoch == self.trainer_params['epochs'])
-            model_save_interval = self.trainer_params['logging']['model_save_interval']
-            img_save_interval = self.trainer_params['logging']['img_save_interval']
-
-            if epoch > 1:  # save latest images, every epoch
-                self.logger.info("Saving log_image")
-                image_prefix = '{}/latest'.format(self.result_folder)
-                util_save_log_image_with_label(image_prefix, self.trainer_params['logging']['log_image_params_1'],
-                                    self.result_log, labels=['train_score'])
-                util_save_log_image_with_label(image_prefix, self.trainer_params['logging']['log_image_params_2'],
-                                    self.result_log, labels=['train_loss'])
-
-            if all_done or (epoch % model_save_interval) == 0:
-                self.logger.info("Saving trained_model")
-                checkpoint_dict = {
-                    'epoch': epoch,
-                    'model_state_dict': self.model.state_dict(),
-                    'optimizer_state_dict': self.optimizer.state_dict(),
-                    'scheduler_state_dict': self.scheduler.state_dict(),
-                    'result_log': self.result_log.get_raw_data()
-                }
-                torch.save(checkpoint_dict, '{}/checkpoint-{}.pt'.format(self.result_folder, epoch))
-
-            if all_done or (epoch % img_save_interval) == 0:
-                image_prefix = '{}/img/checkpoint-{}'.format(self.result_folder, epoch)
-                util_save_log_image_with_label(image_prefix, self.trainer_params['logging']['log_image_params_1'],
-                                    self.result_log, labels=['train_score'])
-                util_save_log_image_with_label(image_prefix, self.trainer_params['logging']['log_image_params_2'],
-                                    self.result_log, labels=['train_loss'])
-
-            if all_done:
-                self.logger.info(" *** Training Done *** ")
-                self.logger.info("Now, printing log array...")
-                util_print_log_array(self.logger, self.result_log)
+            self._train_one_epoch(epoch)
+            # Save checkpoint every epoch (or use a save interval)
+            self._save_checkpoint(epoch)
 
     def _train_one_epoch(self, epoch):
 
@@ -193,3 +145,33 @@ class TSPTrainer:
         loss_mean.backward()
         self.optimizer.step()
         return score_mean.item(), loss_mean.item()
+    
+    def get_solution(self, batch_size=1):
+        self.model.eval()
+        self.env.load_problems(batch_size)
+        reset_state, _, _ = self.env.reset()
+        self.model.pre_forward(reset_state)
+
+        state, reward, done = self.env.pre_step()
+        selected_node_list = []
+
+        while not done:
+            selected, prob = self.model(state)
+            # selected: (batch, pomo)
+            # For simplicity, take the first POMO head
+            selected_node_list.append(selected[:, 0].cpu().numpy())
+            state, reward, done = self.env.step(selected)
+
+        # Stack selections to get the full route
+        route = [str(node+1) for node in list(selected_node_list)]  # +1 for 1-based indexing
+        print("Route:", "->".join(route))
+
+    def _save_checkpoint(self, epoch):
+        checkpoint = {
+            'model_state_dict': self.model.state_dict(),
+            'optimizer_state_dict': self.optimizer.state_dict(),
+            'epoch': epoch,
+            # ... any other info ...
+        }
+        save_path = os.path.join(self.result_folder, f'checkpoint-{epoch}.pt')
+        torch.save(checkpoint, save_path)
